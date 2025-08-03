@@ -119,30 +119,34 @@ async def get_weather_onboard(
     lon: float = Query(76.829600, description="Longitude", alias="lon")
 ):
     import requests
-    from fastapi import Request
-    # Call the main /weather endpoint (internal or external)
+    from datetime import datetime
+    WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+    if not WEATHER_API_KEY:
+        return {"error": "No weather API key configured."}
+    url_current = f"http://api.weatherapi.com/v1/current.json?key={WEATHER_API_KEY}&q={lat},{lon}"
+    url_forecast = f"http://api.weatherapi.com/v1/forecast.json?key={WEATHER_API_KEY}&q={lat},{lon}&days=1"
     try:
-        api_url = f"https://braj.onrender.com/weather?lat={lat}&lon={lon}"
-        resp = requests.get(api_url, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        temp = data["weather"]["current"]["temp_c"]
-        # Find max rain probability in next 6h
-        forecast_hours = data["forecast"]["forecastday"][0]["hour"]
-        from datetime import datetime, timedelta
+        resp_current = requests.get(url_current, timeout=10)
+        resp_current.raise_for_status()
+        weather_data = resp_current.json()
+        resp_forecast = requests.get(url_forecast, timeout=10)
+        resp_forecast.raise_for_status()
+        forecast_data = resp_forecast.json()
+        temp = weather_data["current"]["temp_c"]
+        hours = forecast_data["forecast"]["forecastday"][0]["hour"]
         now = datetime.utcnow()
-        next6h = [h for h in forecast_hours if datetime.strptime(h["time"], "%Y-%m-%d %H:%M") >= now][:6]
+        next6h = [h for h in hours if datetime.strptime(h["time"], "%Y-%m-%d %H:%M") >= now][:6]
         rain_probs = [h.get("chance_of_rain", 0) for h in next6h]
         rain_probability = max(rain_probs) if rain_probs else 0
-        umbrella_recommended = data.get("umbrella_recommended", "no")
-        # Call Gemini for concise suggestion
-        GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+        umbrella_recommended = "yes" if rain_probability > 50 or any(h.get("will_it_rain", 0) for h in next6h) else "no"
+        # Concise suggestion via Gemini
         if not GEMINI_API_KEY:
-            concise_suggestion = data.get("suggestion", "")[:80]
+            concise_suggestion = "No Gemini key configured. Enjoy your day!"
         else:
             gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
             prompt = (
-                "Given the following weather data JSON, provide a concise, actionable suggestion for the user in 15 words or less.\n\nWeather Data:\n" + str(data["weather"]["current"]) + "\nRain probability in next 6h: " + str(rain_probability) + ", umbrella: " + umbrella_recommended
+                "Given the following weather data JSON, provide a concise, actionable suggestion for the user in 15 words or less.\n\nWeather Data:\n" + str(weather_data["current"]) + "\nRain probability in next 6h: " + str(rain_probability) + ", umbrella: " + umbrella_recommended
             )
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
             headers = {"Content-Type": "application/json"}
@@ -152,7 +156,7 @@ async def get_weather_onboard(
                 gemini_data = gemini_resp.json()
                 concise_suggestion = gemini_data["candidates"][0]["content"]["parts"][0]["text"].strip()
             except Exception:
-                concise_suggestion = data.get("suggestion", "")[:80]
+                concise_suggestion = "Enjoy your day!"
         return {
             "temperature": temp,
             "rain_probability_next_6h": rain_probability,
