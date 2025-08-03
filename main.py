@@ -115,8 +115,8 @@ async def delete_timetable_entry(entry_id: str):
 
 @app.get("/weather/onboard")
 async def get_weather_onboard(
-    lat: float = Query(23.072190, description="Latitude", alias="lat"),
-    lon: float = Query(76.829600, description="Longitude", alias="lon")
+    lat: float = Query(27.2264, description="Latitude", alias="lat"),
+    lon: float = Query(78.2425, description="Longitude", alias="lon")
 ):
     import requests
     from datetime import datetime
