@@ -45,7 +45,7 @@ class TimetableEntryInDB(TimetableEntry):
 
 # --- TASKS ENDPOINTS ---
 from bson import ObjectId
-from .utils import get_collection, analyze_weather_with_groq
+from utils import get_collection, analyze_weather_with_groq
 from fastapi import Query
 
 @app.get("/tasks", response_model=List[TaskInDB])
