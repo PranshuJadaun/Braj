@@ -112,6 +112,45 @@ async def delete_timetable_entry(entry_id: str):
     return {"message": "Timetable entry deleted"}
 
 # --- WEATHER ENDPOINT (with Groq AI suggestion) ---
+
+@app.get("/weather/onboard")
+async def get_weather_onboard(
+    lat: float = Query(23.072190, description="Latitude", alias="lat"),
+    lon: float = Query(76.829600, description="Longitude", alias="lon")
+):
+    import requests
+    WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
+    if not WEATHER_API_KEY:
+        return {"error": "No weather API key configured."}
+    url_current = f"http://api.weatherapi.com/v1/current.json?key={WEATHER_API_KEY}&q={lat},{lon}"
+    url_forecast = f"http://api.weatherapi.com/v1/forecast.json?key={WEATHER_API_KEY}&q={lat},{lon}&days=1"
+    try:
+        resp_current = requests.get(url_current, timeout=10)
+        resp_current.raise_for_status()
+        weather_data = resp_current.json()
+        resp_forecast = requests.get(url_forecast, timeout=10)
+        resp_forecast.raise_for_status()
+        forecast_data = resp_forecast.json()
+        # Get next 6 hours rain probability (max)
+        hours = forecast_data["forecast"]["forecastday"][0]["hour"]
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        next6h = [h for h in hours if datetime.strptime(h["time"], "%Y-%m-%d %H:%M") >= now][:6]
+        rain_probs = [h.get("chance_of_rain", 0) for h in next6h]
+        rain_probability = max(rain_probs) if rain_probs else 0
+        # Umbrella recommendation: yes if any rain probability > 50% or totalprecip > 0
+        umbrella_recommended = "yes" if rain_probability > 50 or any(h.get("will_it_rain", 0) for h in next6h) else "no"
+        # Concise suggestion
+        suggestion = analyze_weather_with_groq(weather_data)[:80]  # Truncate for ESP32
+        return {
+            "temperature": weather_data["current"]["temp_c"],
+            "rain_probability_next_6h": rain_probability,
+            "umbrella_recommended": umbrella_recommended,
+            "suggestion": suggestion
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/weather")
 async def get_weather(
     lat: float = Query(23.072190, description="Latitude", alias="lat"),
